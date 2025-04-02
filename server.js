@@ -19,7 +19,8 @@ app.get('/', (req, res) => {
     message: 'LinkDownloader API Server is running',
     endpoints: {
       extract: '/api/extract?url=URL_DO_MEDIÓW',
-      formats: '/api/formats?url=URL_DO_MEDIÓW'
+      formats: '/api/formats?url=URL_DO_MEDIÓW',
+      youtube: '/api/youtube?id=ID_FILMU_YOUTUBE'
     }
   });
 });
@@ -58,6 +59,33 @@ app.get('/api/formats', async (req, res) => {
     res.json(formats);
   } catch (error) {
     console.error(`Błąd: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint specjalnie dla YouTube
+app.get('/api/youtube', async (req, res) => {
+  const videoId = req.query.id;
+  if (!videoId) {
+    return res.status(400).json({ error: 'ID filmu YouTube jest wymagane' });
+  }
+
+  console.log(`Przetwarzanie filmu YouTube o ID: ${videoId}`);
+
+  try {
+    // Utwórz URL YouTube na podstawie ID
+    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Użyj istniejącej funkcji getMediaInfo
+    const mediaInfo = await getMediaInfo(youtubeUrl);
+    
+    // Dodaj dodatkowe informacje specyficzne dla YouTube
+    mediaInfo.video_id = videoId;
+    mediaInfo.platform = 'youtube';
+    
+    res.json(mediaInfo);
+  } catch (error) {
+    console.error(`Błąd przetwarzania filmu YouTube: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 });
