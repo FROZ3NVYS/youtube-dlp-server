@@ -3,6 +3,7 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
 const { exec } = require('child_process');
+const fs = require('fs');
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -76,8 +77,8 @@ app.get('/api/youtube', async (req, res) => {
     // Utwórz URL YouTube na podstawie ID
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
     
-    // Użyj istniejącej funkcji getMediaInfo
-    const mediaInfo = await getMediaInfo(youtubeUrl);
+    // Użyj specjalnej funkcji dla YouTube
+    const mediaInfo = await getYouTubeMediaInfo(youtubeUrl);
     
     // Dodaj dodatkowe informacje specyficzne dla YouTube
     mediaInfo.video_id = videoId;
@@ -144,6 +145,61 @@ async function getMediaInfo(url) {
   });
 }
 
+// Specjalna funkcja dla YouTube z dodatkowymi parametrami
+async function getYouTubeMediaInfo(url) {
+  return new Promise((resolve, reject) => {
+    // Dodaj specjalne parametry dla YouTube
+    const command = `yt-dlp --dump-json --no-warnings --extractor-args "youtube:player_client=android" --geo-bypass ${url}`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Błąd wykonania komendy YouTube: ${error.message}`);
+        return reject(new Error(`Nie można pobrać informacji o filmie YouTube: ${error.message}`));
+      }
+      
+      if (stderr) {
+        console.error(`stderr: ${stderr}`);
+      }
+      
+      try {
+        const data = JSON.parse(stdout);
+        
+        // Przygotuj odpowiedź
+        const response = {
+          title: data.title || 'Nieznany tytuł',
+          description: data.description || '',
+          thumbnail: data.thumbnail || '',
+          directVideoUrl: null,
+          directAudioUrl: null
+        };
+        
+        // Znajdź najlepszy format wideo
+        if (data.formats) {
+          const videoFormats = data.formats.filter(f => f.vcodec !== 'none' && f.acodec !== 'none');
+          if (videoFormats.length > 0) {
+            // Sortuj według rozdzielczości (od najwyższej do najniższej)
+            videoFormats.sort((a, b) => (b.height || 0) - (a.height || 0));
+            response.directVideoUrl = videoFormats[0].url;
+          }
+          
+          // Znajdź najlepszy format audio
+          const audioFormats = data.formats.filter(f => f.acodec !== 'none');
+          if (audioFormats.length > 0) {
+            // Sortuj według bitrate (od najwyższego do najniższego)
+            audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0));
+            response.directAudioUrl = audioFormats[0].url;
+          }
+        }
+        
+        resolve(response);
+      } catch (e) {
+        console.error(`Błąd parsowania JSON YouTube: ${e.message}`);
+        reject(new Error('Nie można przetworzyć informacji o filmie YouTube'));
+      }
+    });
+  });
+}
+
 // Funkcja do pobierania dostępnych formatów
 async function getAvailableFormats(url) {
   return new Promise((resolve, reject) => {
@@ -185,7 +241,30 @@ async function getAvailableFormats(url) {
   });
 }
 
-// Uruchom serwer
-app.listen(port, () => {
+// Funkcja do aktualizacji youtube-dlp
+async function updateYoutubeDlp() {
+  return new Promise((resolve, reject) => {
+    const command = `yt-dlp -U`;
+    
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Błąd aktualizacji youtube-dlp: ${error.message}`);
+        return reject(error);
+      }
+      
+      console.log(`youtube-dlp zaktualizowany: ${stdout}`);
+      resolve(stdout);
+    });
+  });
+}
+
+// Uruchom serwer i zaktualizuj youtube-dlp
+app.listen(port, async () => {
   console.log(`Serwer uruchomiony na porcie ${port}`);
+  try {
+    await updateYoutubeDlp();
+    console.log('youtube-dlp zaktualizowany pomyślnie');
+  } catch (error) {
+    console.error('Błąd aktualizacji youtube-dlp:', error);
+  }
 });
